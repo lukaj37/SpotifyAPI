@@ -5,6 +5,8 @@ from spotipy import Spotify
 from spotipy.oauth2 import SpotifyOAuth
 from spotipy.cache_handler import FlaskSessionCacheHandler
 from flask_cors import CORS
+from google import genai
+import json
 
 app = Flask(__name__)
 CORS(app, origins="http://localhost:4200")
@@ -13,6 +15,7 @@ app.config['SECRET_KEY'] = os.urandom(64)
 # Spotify API configuration
 CLIENT_ID = '4998ad91a94744c7911f5c9900b9089f'
 CLIENT_SECRET = '71e35f3abba549bf95f946f2d7fd0ec1'
+GENAI_API_KEY = 'AIzaSyC-9UOo0soq24Qsr9iS202yCPf7m0Sj2h8'
 REDIRECT_URI = 'http://localhost:5000/callback'
 SCOPE = 'user-read-private user-read-email playlist-read-private playlist-modify-private playlist-modify-public'
 
@@ -81,6 +84,37 @@ def callback():
         print(f"Exception while getting access token: {e}")
         return redirect('http://localhost:4200/')
 
+@app.route('/extract_playlist_info', methods=['POST'])
+def extract_playlist_info():
+    data = request.get_json()
+    text_from_image = data.get('text')
+
+    if not text_from_image:
+        return jsonify({'error': 'No text provided'}), 400
+
+    try:
+        prompt = f"""The following text was extracted from an image of a music playlist. 
+        Your job is to extract the playlist name and a list of songs (with artist names if available).
+        
+        Text: {text_from_image}
+
+        Return a JSON object with "playlistName" and "songs", where songs is a list of strings like "Song - Artist".
+        """
+
+        client = genai.Client(api_key=GENAI_API_KEY)
+        response = client.models.generate_content(
+            model="gemini-2.0-flash", contents=prompt
+        )
+
+        result_text = response.text.strip("```json").strip()
+        
+        playlist_data = json.loads(result_text)
+        
+        return jsonify({'result': playlist_data})
+    
+    except Exception as e:
+        print("OpenAI error:", e)
+        return jsonify({'error': 'Failed to process OpenAI request'}), 500
 
 # Protected route - returns user's playlists
 @app.route('/get_playlists')
